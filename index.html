@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>La bóveda del azar 2.0</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #141923; color: white;
+      max-width: 520px; margin: 40px auto; padding: 20px; }
+    button { padding: 12px; margin: 5px; cursor: pointer; }
+    button:disabled { cursor: default; opacity: .6; }
+    .panel { background: #253043; padding: 20px; border-radius: 12px; margin-bottom: 15px; }
+    #guardado { line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>La bóveda del azar 2.0</h1>
+  <div class="panel">
+    <p>Monedas: <span id="monedas">20</span></p>
+    <p>Vidas: <span id="vidas">3</span></p>
+    <p>Banco: <span id="banco">60</span></p>
+    <p id="mensaje" role="status">¡Bienvenido!</p>
+    <button id="jugar" type="button" onclick="jugar()">Activar máquina</button>
+    <button type="button" onclick="reiniciar()">Nueva expedición</button>
+  </div>
+  <div class="panel">
+    <h2>Tienda</h2>
+    <p>Amuleto: +3 monedas por acierto y por nivel</p>
+    <p>Nivel: <span id="nivel">0</span> / 3</p>
+    <p id="costo"></p>
+    <button id="comprar" type="button" onclick="comprar()">Comprar mejora</button>
+  </div>
+  <p>Se conservan el banco y las mejoras. Al recargar empiezas una expedición nueva.</p>
+  <p id="guardado" role="status"></p>
+  <button type="button" onclick="borrarProgreso()">Borrar progreso</button>
+
+  <script>
+    "use strict";
+    const CLAVE = "bovedaGuardado";
+    let monedas = 20;
+    let vidas = 3;
+    let banco = 60;
+    let nivel = 0;
+    let expedicionActiva = true;
+
+    // Todas las funciones están al mismo nivel, fuera de jugar().
+    function actualizar() {
+      document.getElementById("monedas").textContent = monedas;
+      document.getElementById("vidas").textContent = vidas;
+      document.getElementById("banco").textContent = banco;
+      document.getElementById("nivel").textContent = nivel;
+      document.getElementById("costo").textContent = nivel >= 3
+        ? "Nivel máximo alcanzado." : `Costo: ${30 * (nivel + 1)} monedas del banco.`;
+      document.getElementById("jugar").disabled = !expedicionActiva;
+      document.getElementById("comprar").disabled = nivel >= 3;
+    }
+
+    function guardarProgreso() {
+      try {
+        // localStorage almacena texto; stringify convierte el objeto a JSON.
+        localStorage.setItem(CLAVE, JSON.stringify({ banco, nivel }));
+        document.getElementById("guardado").textContent = "Banco y mejoras guardados en este navegador.";
+        return true;
+      } catch (error) {
+        document.getElementById("guardado").textContent =
+          "No se pudo guardar. Puedes seguir jugando, pero los cambios podrían perderse al recargar.";
+        return false;
+      }
+    }
+
+    function cargarProgreso() {
+      try {
+        // También getItem puede fallar si el navegador bloquea el almacenamiento.
+        const texto = localStorage.getItem(CLAVE);
+        if (texto === null) {
+          document.getElementById("guardado").textContent = "Todavía no hay progreso guardado.";
+          return;
+        }
+        const progreso = JSON.parse(texto);
+        if (progreso === null || typeof progreso !== "object" || Array.isArray(progreso) ||
+            !Number.isSafeInteger(progreso.banco) || progreso.banco < 0 ||
+            !Number.isInteger(progreso.nivel) || progreso.nivel < 0 || progreso.nivel > 3) {
+          throw new Error("Guardado inválido");
+        }
+        // Asignar únicamente después de validar ambos valores.
+        banco = progreso.banco;
+        nivel = progreso.nivel;
+        document.getElementById("guardado").textContent = "Banco y mejoras recuperados.";
+      } catch (error) {
+        document.getElementById("guardado").textContent =
+          "No se pudo recuperar el progreso. Se usarán los valores iniciales.";
+      }
+    }
+
+    function jugar() {
+      if (!expedicionActiva || vidas <= 0 || monedas >= 100) return;
+      const azar = Math.random();
+      if (azar < 0.60) {
+        const premio = 8 + nivel * 3;
+        monedas += premio;
+        document.getElementById("mensaje").textContent = `¡Ganaste ${premio} monedas!`;
+      } else if (azar < 0.85) {
+        monedas = Math.max(0, monedas - 4);
+        document.getElementById("mensaje").textContent = "Perdiste hasta 4 monedas.";
+      } else {
+        vidas--;
+        document.getElementById("mensaje").textContent = "¡Una trampa! Perdiste una vida.";
+      }
+      if (monedas >= 100) terminarExpedicion(true);
+      else if (vidas <= 0) terminarExpedicion(false);
+      else actualizar();
+    }
+
+    function terminarExpedicion(victoria) {
+      if (!expedicionActiva) return;
+      expedicionActiva = false; // Cerrar antes de pagar evita cobrar dos veces.
+      const recompensaTotal = Math.floor(monedas / 5) + (victoria ? 30 : 0);
+      // Evitar perder precisión si un guardado contiene un banco enorme.
+      banco = Math.min(Number.MAX_SAFE_INTEGER - recompensaTotal, banco) + recompensaTotal;
+      guardarProgreso();
+      document.getElementById("mensaje").textContent =
+        `${victoria ? "¡Victoria!" : "Derrota."} Recompensa al banco: ${recompensaTotal} monedas.`;
+      actualizar();
+    }
+
+    function comprar() {
+      if (nivel >= 3) return;
+      const costo = 30 * (nivel + 1);
+      if (banco < costo) {
+        document.getElementById("mensaje").textContent = `Necesitas ${costo} monedas en el banco.`;
+        return;
+      }
+      banco -= costo;
+      nivel++;
+      guardarProgreso();
+      document.getElementById("mensaje").textContent = `Amuleto mejorado al nivel ${nivel}.`;
+      actualizar();
+    }
+
+    function reiniciar() {
+      monedas = 20;
+      vidas = 3;
+      expedicionActiva = true;
+      document.getElementById("mensaje").textContent = "Nueva expedición iniciada.";
+      actualizar(); // No cambia banco ni nivel; abandonar no entrega recompensa.
+    }
+
+    function borrarProgreso() {
+      if (!window.confirm("¿Borrar tu banco y todas las mejoras? Esta acción no se puede deshacer.")) return;
+      try {
+        localStorage.removeItem(CLAVE); // Borrar solo este juego, no todo localStorage.
+      } catch (error) {
+        document.getElementById("guardado").textContent = "No se pudo borrar el guardado. Tu progreso sigue intacto.";
+        return;
+      }
+      banco = 60;
+      nivel = 0;
+      reiniciar();
+      document.getElementById("mensaje").textContent = "Progreso borrado. Empiezas desde cero.";
+      document.getElementById("guardado").textContent = "Guardado eliminado. Banco inicial: 60; nivel inicial: 0.";
+    }
+
+    // Primero recuperar los datos; después mostrarlos.
+    cargarProgreso();
+    actualizar();
+  </script>
+</body>
+</html>
